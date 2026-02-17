@@ -1,0 +1,97 @@
+services:
+  gluetun:
+    image: qmcgaw/gluetun:latest
+    container_name: gluetun
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    env_file:
+      - .env
+    environment:
+      - VPN_SERVICE_PROVIDER=protonvpn
+      - VPN_TYPE=wireguard
+      - SERVER_COUNTRIES=France # REMPLACER PAR LE PAYS DESIRE
+      - HEALTH_SMALL_CHECK_TYPE=dns
+      - HEALTH_ICMP_TARGET_IPS=
+      - HEALTH_TARGET_ADDRESSES=cloudflare.com:443
+    ports:
+      - "127.0.0.1:9999:8080" # WebUI qBittorrent (via gluetun)
+      - "3334:3334/tcp"
+      - "3334:3334/udp"
+    networks:
+      - torrent_network
+
+  qbittorrent:
+    image: lscr.io/linuxserver/qbittorrent:latest
+    container_name: qbittorrent
+    restart: unless-stopped
+    network_mode: "service:gluetun"
+    depends_on:
+      gluetun:
+        condition: service_healthy
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - TZ=Europe/Paris
+    volumes:
+      - /qBittorrent:/config"
+      - /downloads:/media
+
+  prowlarr:
+    image: lscr.io/linuxserver/prowlarr:latest
+    container_name: prowlarr
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:9696:9696"
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - TZ=Europe/Paris
+    volumes:
+      - /Prowlarr:/config
+    networks:
+      - torrent_network
+
+  sonarr:
+    image: lscr.io/linuxserver/sonarr:latest
+    container_name: sonarr
+    restart: unless-stopped
+    depends_on:
+      - qbittorrent
+      - prowlarr
+    ports:
+      - "127.0.0.1:8989:8989"
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - TZ=Europe/Paris
+    volumes:
+      - /Sonarr:/config
+      - /downloads:/media
+    networks:
+      - torrent_network
+
+  radarr:
+    image: lscr.io/linuxserver/radarr:latest
+    container_name: radarr
+    restart: unless-stopped
+    depends_on:
+      - qbittorrent
+      - prowlarr
+    ports:
+      - "127.0.0.1:7878:7878"
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - TZ=Europe/Paris
+    volumes:
+      - /Radarr:/config
+      - /downloads:/media
+    networks:
+      - torrent_network
+
+networks:
+  torrent_network:
+    driver: bridge
